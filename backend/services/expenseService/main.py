@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from common.supabase import supabase
 from common.auth import get_current_user
@@ -6,6 +7,19 @@ import pandas as pd
 import uuid
 
 app = FastAPI()
+
+origins = [
+    "http://localhost:3000",
+    "https://obscure-space-orbit-x5jg5w6g9gvp3p4rw-8002.app.github.dev/",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # -------- MODELS --------
 
