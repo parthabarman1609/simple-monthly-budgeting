@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <linearGradient id="whiteMetallic" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="80%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#e5e7eb" />
+    </linearGradient>
+
+    <linearGradient id="navyMetallic" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00315a" />
+      <stop offset="40%" stop-color="#00467F" />
+      <stop offset="50%" stop-color="#2170b5" /> <stop offset="60%" stop-color="#00467F" />
+      <stop offset="100%" stop-color="#001d36" />
+    </linearGradient>
+
+    <linearGradient id="redMetallic" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f02440" /> <stop offset="40%" stop-color="#C30019" />
+      <stop offset="100%" stop-color="#8a0012" />
+    </linearGradient>
+  </defs>
+
+  <circle cx="60" cy="60" r="55" fill="url(#whiteMetallic)"/>
+  
+  <circle cx="60" cy="60" r="50" fill="none" stroke="url(#navyMetallic)" stroke-width="2.5"/>
+  
+  <text x="45" y="75" font-family="Georgia, serif" font-size="48" font-weight="bold" fill="url(#navyMetallic)" text-anchor="middle">S</text>
+  
+  <text x="75" y="65" font-family="Georgia, serif" font-size="48" font-weight="bold" fill="url(#redMetallic)" text-anchor="middle">E</text>
+</svg>

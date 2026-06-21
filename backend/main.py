@@ -1,0 +1,31 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+# Import the routers from your microservices
+from services.expenseService.main import router as expense_router
+from services.groupService.main import router as group_router
+from services.analyticsService.main import router as analytics_router
+from services.profileService.main import router as profiles_router
+
+app = FastAPI(title="SplitEasy API")
+
+origins = [
+    "http://localhost:3000",
+    "https://obscure-space-orbit-x5jg5w6g9gvp3p4rw-3000.app.github.dev",
+]
+
+# Global CORS setup (Applies to all services automatically)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_origin_regex=r"https?://.*\.app\.github\.dev",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Mount the microservices to the main app
+app.include_router(expense_router)
+app.include_router(group_router)
+app.include_router(analytics_router)
+app.include_router(profiles_router)
