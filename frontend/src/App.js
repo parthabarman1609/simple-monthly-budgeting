@@ -10,6 +10,7 @@ import JoinGroup from "./pages/JoinGroup";
 import AddExpense from "./pages/AddExpense";
 import UploadCSV from "./pages/UploadCSV";
 import CreateGroup from "./pages/CreateGroup"; // Import the CreateGroup component
+import AcceptInvite from "./pages/AcceptInvite"; // Import the AcceptInvite component
 
 function App() {
   const [session, setSession] = useState(null);
@@ -18,6 +19,16 @@ function App() {
   const [page, setPage] = useState("home"); 
 
   useEffect(() => {
+
+    // Check if the user arrived via an email invitation link
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+    if (token) {
+      setInviteToken(token);
+      setPage("invite");
+    }
+    // ----------------------
+    
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
     });
@@ -110,6 +121,7 @@ function App() {
         {page === "expense" && <AddExpense />}
         {page === "upload" && <UploadCSV />}
         {page === "create-group" && <CreateGroup setPage={setPage} />}
+        {page === "accept-invite" && inviteToken && <AcceptInvite token={inviteToken} setPage={setPage} />}
         {/* Placeholders for your future screens */}
         {page === "insights" && <div className="p-6 text-center text-gray-500 mt-10">Insights Dashboard coming soon...</div>}
         {page === "friends" && <div className="p-6 text-center text-gray-500 mt-10">Friends List coming soon...</div>}

@@ -1,0 +1,35 @@
+1. uvicorn services.expenseService.main:app --reload --host 0.0.0.0 --port 8002
+2. lsof -i :8002
+3. kill -9 [PID]
+
+{
+  "amount": 25.5,
+  "description": "Dinner at Cargo Hall",
+  "category": "Eating out",
+  "date": "2026-05-10",
+  "group_id": "parthabarman",
+  "splits": [
+    {
+      "user_id": "04a26012-7d92-4daa-823f-198b2390192d",
+      "amount": 12.75
+    }
+  ]
+}
+
+{
+  "amount": 60,
+  "description": "Cargo Hall Lunch",
+  "category": "Eating out",
+  "date": "2026-05-23",
+  "group_id": "04a26012-7d92-4daa-823f-198b2390193a",
+  "splits": [
+    {
+      "user_id": "04a26012-7d92-4daa-823f-198b2390192d",
+      "amount": 40
+    },
+    {
+      "user_id": "21d4ccc0-0d03-4437-b409-8c1721c61585",
+      "amount": 20
+    }
+  ]
+}
