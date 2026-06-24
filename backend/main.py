@@ -1,8 +1,10 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 # 1. LOAD THIS FIRST! Before importing any of your services
-load_dotenv()
+env_path = Path(__file__).resolve().parent / "services" / ".env"
+load_dotenv(dotenv_path=env_path)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
