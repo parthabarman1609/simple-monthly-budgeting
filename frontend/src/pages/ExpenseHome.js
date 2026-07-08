@@ -1,77 +1,97 @@
 import { useState, useEffect } from "react";
 import { apiGet, apiPatch } from "../api/client"; 
 
-export default function ExpensesHome({ setPage }) {
-  const [isShareModalOpen, setShareModalOpen] = useState(false);
-  const [activeExpense, setActiveExpense] = useState(null);
-  
+export default function ExpensesHome({ setPage, currentUser, setEditExpenseData }) {
   const [expenses, setExpenses] = useState([]); 
   const [groups, setGroups] = useState([]); 
   const [isLoading, setIsLoading] = useState(true);
-  
-  const [shareType, setShareType] = useState("ratio"); 
-  const [shareValue, setShareValue] = useState("");
+
+  // Granular Share Modal State (Restored for unshared expenses)
+  const [isShareModalOpen, setShareModalOpen] = useState(false);
+  const [activeExpense, setActiveExpense] = useState(null);
   const [selectedGroup, setSelectedGroup] = useState("");
+  const [groupMembers, setGroupMembers] = useState([]);
+  const [includedMembers, setIncludedMembers] = useState({});
+  const [memberModes, setMemberModes] = useState({});
+  const [memberValues, setMemberValues] = useState({});
 
   useEffect(() => {
     fetchExpenses();
     fetchGroups();
   }, []);
 
+  useEffect(() => {
+    if (selectedGroup) {
+      apiGet(`/groups/${selectedGroup}/members`)
+        .then(data => setGroupMembers(data || []))
+        .catch(() => setGroupMembers([]));
+    } else {
+      setGroupMembers([]);
+    }
+  }, [selectedGroup]);
+
   const fetchExpenses = async () => {
     setIsLoading(true);
     try {
       const data = await apiGet("/expenses");
-      if (Array.isArray(data)) {
-        setExpenses(data);
-      }
-    } catch (err) {
-      console.error("Failed to fetch expenses");
-    } finally {
-      setIsLoading(false);
-    }
+      if (Array.isArray(data)) setExpenses(data);
+    } catch (err) {} finally { setIsLoading(false); }
   };
 
   const fetchGroups = async () => {
     try {
       const data = await apiGet("/groups");
-      if (Array.isArray(data)) {
-        setGroups(data);
-      }
-    } catch (err) {
-      console.error("Failed to fetch groups");
-    }
+      if (Array.isArray(data)) setGroups(data);
+    } catch (err) {}
   };
 
-  const handleOpenShare = (expense) => {
-    setActiveExpense(expense);
+  const handleRowClick = (exp) => {
+    if (setEditExpenseData) setEditExpenseData(exp);
+    setPage('expense');
+  };
+
+  const handleOpenShare = (e, exp) => {
+    e.stopPropagation(); // Prevents the row click from firing
+    setActiveExpense(exp);
+    setSelectedGroup("");
     setShareModalOpen(true);
+    setIncludedMembers({});
+    setMemberModes({});
+    setMemberValues({});
+  };
+
+  const handleToggleMember = (userId) => {
+    setIncludedMembers(prev => {
+      const isSelected = !prev[userId];
+      if (isSelected && !memberModes[userId]) setMemberModes(modes => ({ ...modes, [userId]: 'equal' }));
+      return { ...prev, [userId]: isSelected };
+    });
   };
 
   const handleShareSubmit = async () => {
     if (!selectedGroup) return alert("Please select a group");
     
-    try {
-      const res = await apiPatch(`/expenses/${activeExpense.id}/share`, {
-        group_id: selectedGroup,
-        share_type: shareType,
-        share_value: shareValue
-      });
+    const splitsToSubmit = Object.keys(includedMembers)
+      .filter(id => includedMembers[id])
+      .map(id => ({
+        user_id: id,
+        share_type: memberModes[id] || 'equal',
+        share_value: memberValues[id] || ""
+      }));
 
-      if (res.message) {
-        alert("Expense successfully shared!");
-        setShareModalOpen(false);
-        setShareValue(""); 
-        fetchExpenses(); 
-      } else {
-        alert(`Error: ${res.detail || "Failed to share expense"}`);
-      }
+    try {
+      await apiPatch(`/expenses/${activeExpense.id}/share`, {
+        group_id: selectedGroup,
+        splits: splitsToSubmit
+      });
+      alert("Expense shared successfully!");
+      setShareModalOpen(false);
+      fetchExpenses(); 
     } catch (error) {
-      alert("Network error occurred while sharing.");
+      alert(`Server Error: ${error.detail || "Failed to process the split calculations."}`);
     }
   };
 
-  // Helper function to get group name safely
   const getGroupName = (groupId) => {
     const group = groups.find(g => g.id === groupId);
     return group ? group.name : "Unknown Group";
@@ -81,160 +101,154 @@ export default function ExpensesHome({ setPage }) {
     <div className="flex flex-col h-full relative p-4 animate-fade-in bg-gray-50/50">
       <div className="mb-6">
         <h2 className="text-xl text-[#002147] font-bold font-logo">Your Expenses</h2>
-        <p className="text-xs text-gray-500 mt-1">Since 01 May '26 • Scroll for more</p>
+        <p className="text-xs text-gray-500 mt-1">Scroll for more</p>
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-4 pb-32 no-scrollbar">
         {isLoading ? (
-          <p className="text-center text-gray-500 mt-10 animate-pulse">Loading your expenses...</p>
+          <p className="text-center text-gray-500 mt-10">Loading...</p>
         ) : expenses.length === 0 ? (
-          <div className="text-center mt-10 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+          <div className="text-center mt-10 bg-white p-6 rounded-2xl shadow-sm">
             <p className="text-gray-500 font-medium">No expenses found.</p>
-            <p className="text-xs text-gray-400 mt-1">Add your first expense below!</p>
           </div>
         ) : (
           expenses.map((exp) => (
-            <div key={exp.id} className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm flex items-stretch transition-all hover:shadow-md">
-              
-              {/* LEFT SIDE: Expense Details */}
+            <div 
+              key={exp.id} 
+              onClick={() => handleRowClick(exp)}
+              className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm flex items-stretch cursor-pointer hover:shadow-md transition-all group"
+            >
               <div className="flex-1 flex flex-col justify-center pr-4">
-                
-                {/* Top Row: Description & Amount */}
                 <div className="flex justify-between items-start mb-2">
-                  <span className="text-lg font-bold text-[#002147] leading-tight">{exp.description}</span>
+                  <span className="text-lg font-bold text-[#002147] leading-tight group-hover:text-aa-blue transition-colors">
+                    {exp.description}
+                  </span>
                   <span className="text-lg font-bold text-[#002147]">£{exp.amount}</span>
                 </div>
-                
-                {/* Middle Row: Date & Category */}
                 <div className="flex gap-4 text-xs font-medium text-gray-500 mb-1">
                   <span>{exp.date}</span>
-                  <span>Category : {exp.category}</span>
                 </div>
-
-                {/* Bottom Row: Shared info (Only shows if shared) */}
                 {exp.group_id && (
-                  <div className="text-xs font-medium text-gray-600 mt-2 bg-gray-50 inline-block px-2 py-1 rounded-md border border-gray-100 self-start">
-                    Shared with Groups : <span className="font-bold">{getGroupName(exp.group_id)}</span>
+                  <div className="text-[10px] font-medium text-gray-600 mt-2 bg-gray-50 inline-block px-2 py-1 rounded-md border border-gray-100 self-start">
+                    Group: <span className="font-bold">{getGroupName(exp.group_id)}</span>
                   </div>
                 )}
               </div>
               
-              {/* SEPARATOR: Vertical Dashed Line */}
               <div className="border-l-2 border-dashed border-gray-200 mx-2"></div>
-
-              {/* RIGHT SIDE: Action or Status */}
+              
               <div className="w-24 flex items-center justify-center pl-2">
                 {exp.group_id ? (
                   <div className="text-center w-full">
-                    {/* Status Badge - Using AA theme colors with a dashed border to match your wireframe concept */}
                     <span className={`block px-2 py-2 text-[10px] uppercase tracking-wider font-bold rounded-xl border border-dashed ${
-                      exp.status === 'settled' 
-                        ? 'bg-blue-50 border-aa-blue text-aa-blue' 
-                        : 'bg-gray-50 border-gray-400 text-gray-600'
+                      exp.status === 'settled' ? 'bg-blue-50 border-aa-blue text-aa-blue' : 'bg-gray-50 border-gray-400 text-gray-600'
                     }`}>
-                      {exp.status === 'settled' ? 'Settled' : 'Settlement Pending'}
+                      {exp.status === 'settled' ? 'Settled' : 'Pending'}
                     </span>
                   </div>
                 ) : (
-                  <button 
-                    onClick={() => handleOpenShare(exp)}
-                    className="w-full py-2.5 text-xs font-bold text-aa-blue bg-white border-2 border-aa-blue rounded-xl shadow-sm hover:bg-blue-50 transition-colors"
-                  >
-                    Share
-                  </button>
+                  <div className="w-full flex items-center justify-center">
+                    <button 
+                      onClick={(e) => handleOpenShare(e, exp)}
+                      className="w-full py-2.5 text-xs font-bold text-aa-blue bg-white border-2 border-aa-blue rounded-xl shadow-sm hover:bg-blue-50 transition-colors"
+                    >
+                      Share
+                    </button>
+                  </div>
                 )}
               </div>
-
             </div>
           ))
         )}
       </div>
 
-      {/* Floating Action Buttons */}
-      <div className="absolute bottom-6 left-0 w-full flex justify-center gap-3 px-4">
-        <button 
-          onClick={() => setPage('expense')} 
-          className="flex-1 bg-aa-blue text-white font-semibold py-3.5 rounded-xl shadow-lg hover:bg-[#002147] transition-all text-sm"
-        >
-          Add New Expense
+      <div className="absolute bottom-6 left-0 w-full flex justify-center gap-3 px-4 z-40">
+        <button onClick={() => { if(setEditExpenseData) setEditExpenseData(null); setPage('expense'); }} className="flex-1 bg-aa-blue text-white font-semibold py-3.5 rounded-xl shadow-lg">
+          Add Expense
         </button>
-        <button 
-          onClick={() => setPage('upload')} 
-          className="flex-1 bg-white text-aa-blue border border-aa-blue font-semibold py-3.5 rounded-xl shadow-lg hover:bg-gray-50 transition-all text-sm"
-        >
+        <button onClick={() => setPage('upload')} className="flex-1 bg-white text-aa-blue border border-aa-blue font-semibold py-3.5 rounded-xl shadow-lg">
           Bulk Upload
         </button>
       </div>
 
-      {/* Share Modal */}
+      {/* Restored Quick Share Modal for Unshared Expenses */}
       {isShareModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-[#002147] mb-4 font-logo border-b border-gray-100 pb-3">
-              Share: {activeExpense?.description}
-            </h3>
+          <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl flex flex-col max-h-[85vh]">
+            <h3 className="text-lg font-bold text-[#002147] mb-1 font-logo">Share Expense</h3>
+            <p className="text-sm font-bold text-aa-red mb-4 border-b border-gray-100 pb-3">
+              {activeExpense?.description} - £{activeExpense?.amount}
+            </p>
             
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-              Select Group
-            </label>
-            <select 
-              value={selectedGroup} 
-              onChange={e => setSelectedGroup(e.target.value)} 
-              className="w-full bg-white border border-gray-200 rounded-xl p-3 mb-5 outline-none focus:ring-2 focus:ring-aa-blue focus:border-transparent transition-all shadow-sm text-sm text-gray-700"
-            >
-              <option value="">Choose a group...</option>
-              {groups.length === 0 ? (
-                <option value="" disabled>No groups found. Create one first!</option>
-              ) : (
-                groups.map(group => (
-                  <option key={group.id} value={group.id}>
-                    {group.name}
-                  </option>
-                ))
-              )}
-            </select>
+            <div className="overflow-y-auto pr-1 flex-1 no-scrollbar mb-4">
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                1. Select Group
+              </label>
+              <select 
+                value={selectedGroup} onChange={e => setSelectedGroup(e.target.value)} 
+                className="w-full bg-white border border-gray-200 rounded-xl p-3 mb-5 outline-none text-sm text-gray-700"
+              >
+                <option value="">Choose a group...</option>
+                {groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
+              </select>
 
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-              Split Method
-            </label>
-            <div className="flex gap-1 mb-5 bg-gray-100 p-1.5 rounded-xl">
-              {['ratio', 'decimal', 'equal'].map(type => (
-                <button 
-                  key={type}
-                  onClick={() => setShareType(type)}
-                  className={`flex-1 text-xs py-2 rounded-lg font-semibold transition-all ${
-                    shareType === type 
-                      ? 'bg-white shadow-sm text-aa-blue' 
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  {type === 'ratio' ? 'Fraction' : type === 'decimal' ? 'Amount' : 'Equal'}
-                </button>
-              ))}
+              {selectedGroup && (
+                <>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    2. Assign Shares
+                  </label>
+                  <div className="space-y-3">
+                    {groupMembers.length === 0 && <p className="text-xs text-gray-400">Loading members...</p>}
+                    
+                    {groupMembers.map(member => (
+                      <div key={member.user_id} className="flex flex-col bg-gray-50 p-3 rounded-xl border border-gray-200 gap-2">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input 
+                            type="checkbox" checked={!!includedMembers[member.user_id]} 
+                            onChange={() => handleToggleMember(member.user_id)}
+                            className="w-4 h-4 rounded text-aa-blue"
+                          />
+                          <span className="text-sm font-semibold text-gray-700">
+                            {member.name} {member.user_id === currentUser?.id ? "(Me)" : ""}
+                          </span>
+                        </label>
+                        
+                        {includedMembers[member.user_id] && (
+                          <div className="flex gap-2 pl-7">
+                            <select 
+                              value={memberModes[member.user_id] || 'equal'} 
+                              onChange={(e) => setMemberModes(prev => ({ ...prev, [member.user_id]: e.target.value }))}
+                              className="bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none text-gray-600 flex-1"
+                            >
+                              <option value="equal">Equal</option>
+                              <option value="amount">Amount (£)</option>
+                              <option value="fraction">Fraction (e.g. 1/3)</option>
+                            </select>
+                            
+                            {memberModes[member.user_id] !== 'equal' && (
+                              <input 
+                                type="text" 
+                                placeholder={memberModes[member.user_id] === 'fraction' ? "1/3" : "0.00"} 
+                                value={memberValues[member.user_id] || ""}
+                                onChange={e => setMemberValues(prev => ({ ...prev, [member.user_id]: e.target.value }))}
+                                className="w-20 text-right bg-white border border-gray-200 rounded-lg p-1.5 text-xs outline-none focus:border-aa-blue"
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
 
-            {shareType !== 'equal' && (
-              <input 
-                type="text" 
-                placeholder={shareType === 'ratio' ? "e.g. 1/3, 3/4" : "e.g. £10.50"} 
-                value={shareValue}
-                onChange={e => setShareValue(e.target.value)}
-                className="w-full bg-white border border-gray-200 rounded-xl p-3 mb-6 outline-none focus:ring-2 focus:ring-aa-blue focus:border-transparent transition-all shadow-sm text-sm"
-              />
-            )}
-
-            <div className="flex gap-3 mt-2">
-              <button 
-                onClick={() => setShareModalOpen(false)} 
-                className="flex-1 py-3.5 bg-gray-50 border border-gray-200 font-semibold rounded-xl text-gray-600 hover:bg-gray-100 transition-colors text-sm"
-              >
+            <div className="flex gap-3 pt-3 border-t border-gray-100 shrink-0">
+              <button onClick={() => setShareModalOpen(false)} className="flex-1 py-3 bg-gray-50 border border-gray-200 font-semibold rounded-xl text-gray-600 text-sm">
                 Cancel
               </button>
-              <button 
-                onClick={handleShareSubmit} 
-                className="flex-1 py-3.5 bg-aa-blue font-semibold rounded-xl text-white shadow-md hover:bg-[#002147] transition-all text-sm"
-              >
-                Confirm
+              <button onClick={handleShareSubmit} className="flex-1 py-3 bg-aa-blue font-semibold rounded-xl text-white text-sm">
+                Save & Share
               </button>
             </div>
           </div>

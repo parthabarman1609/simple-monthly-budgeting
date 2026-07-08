@@ -1,7 +1,7 @@
 import { supabase } from "./supabaseClient";
 
-/*const BASE_URL = "https://obscure-space-orbit-x5jg5w6g9gvp3p4rw-8002.app.github.dev/api/v1";*/
-const BASE_URL = "https://ghgg3zhkeglgn3yt5dskelaw4y0jwwib.lambda-url.eu-north-1.on.aws/api/v1";
+const BASE_URL = "https://obscure-space-orbit-x5jg5w6g9gvp3p4rw-8002.app.github.dev/api/v1";
+/*const BASE_URL = "https://ghgg3zhkeglgn3yt5dskelaw4y0jwwib.lambda-url.eu-north-1.on.aws/api/v1";*/
 
 export async function apiPost(path, body, isMultipart = false) {
   const headers = {};
@@ -22,6 +22,12 @@ export async function apiPost(path, body, isMultipart = false) {
     body: isMultipart ? body : JSON.stringify(body)
   });
 
+  // THE FIX: Explicitly throw an error if the status code is not 2xx
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw errorData; // This jumps straight to the catch() block in AddExpense.js
+  }
+
   return res.json();
 }
 
@@ -34,6 +40,12 @@ export async function apiGet(path) {
   }
 
   const res = await fetch(`${BASE_URL}${path}`, { headers });
+
+  // THE FIX: Explicitly throw an error if the status code is not 2xx
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw errorData; // This jumps straight to the catch() block in AddExpense.js
+  }
   return res.json();
 }
 
@@ -57,6 +69,12 @@ export async function apiPut(path, body, isMultipart = false) {
     body: isMultipart ? body : JSON.stringify(body)
   });
 
+  // THE FIX: Explicitly throw an error if the status code is not 2xx
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw errorData; // This jumps straight to the catch() block in AddExpense.js
+  }
+
   return res.json();
 }
 
@@ -72,6 +90,13 @@ export async function apiDelete(path) {
     method: "DELETE",
     headers
   });
+
+  // THE FIX: Explicitly throw an error if the status code is not 2xx
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw errorData; // This jumps straight to the catch() block in AddExpense.js
+  }
+
   return res.json();
 }
 
@@ -87,5 +112,12 @@ export async function apiPatch(path, body) {
     headers,
     body: JSON.stringify(body)
   });
+
+  // THE FIX: Explicitly throw an error if the status code is not 2xx
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw errorData; // This jumps straight to the catch() block in AddExpense.js
+  }
+  
   return res.json();
 }
