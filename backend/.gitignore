@@ -1,2 +1,4 @@
 services/.env
 common/.env
+package
+deployment.zip

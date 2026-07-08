@@ -10,11 +10,16 @@ from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 from common.supabase import supabase
 from common.auth import get_current_user
 
-# Logging setup
-ROOT_DIR = Path(__file__).resolve().parents[3]
-LOG_DIR = ROOT_DIR / "logs"
+# Logging setup ==========================
+# if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+LOG_DIR = Path("/tmp/logs")
+# else:
+#     # Your original logic for local Codespace testing
+#     ROOT_DIR = Path(__file__).resolve().parents[3]
+#     LOG_DIR = ROOT_DIR / "logs"
+#
 LOG_DIR.mkdir(parents=True, exist_ok=True)
-LOG_FILE_PATH = LOG_DIR / "group_service.log"
+LOG_FILE_PATH = LOG_DIR / "groupService.log"
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -31,12 +36,13 @@ console_handler.setLevel(logging.ERROR)
 
 formatter = logging.Formatter(
     "%(asctime)s %(levelname)s %(name)s %(message)s"
-)
+    )
 file_handler.setFormatter(formatter)
 console_handler.setFormatter(formatter)
 
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
+#================================
 
 router = APIRouter()
 
@@ -285,13 +291,17 @@ def get_group_detail(group_id: str, user: dict = Depends(get_current_user)):
 
 @router.get("/api/v1/groups/{group_id}/expenses")
 def get_group_expenses(group_id: str, user: dict = Depends(get_current_user)):
-    # Fetch all expenses tagged to this group
-    res = supabase.table("expenses").select("*").eq("group_id", group_id).order("date", desc=True).execute()
+    # UPDATED: We use a nested select to automatically join the expense_splits table
+    # This provides the frontend with the array of claims for each expense!
+    res = supabase.table("expenses")\
+        .select("*, expense_splits(*, profiles(name))")\
+        .eq("group_id", group_id)\
+        .order("date", desc=True)\
+        .execute()
     
-    # Add a mock status for the UI (until the settlement DB is built)
     expenses = []
     for exp in res.data:
-        exp["status"] = "pending" # or "settled" based on your future logic
+        exp["status"] = "pending" # You can update this logic later
         expenses.append(exp)
         
     return expenses
@@ -352,3 +362,8 @@ async def invite_members_to_group(
         "message": "Invitations sent successfully!",
         "invitations_sent": len(emails_to_dispatch)
     }
+
+@router.get("/api/v1/groups/{group_id}/members")
+def get_group_members_list(group_id: str, user: dict = Depends(get_current_user)):
+    res = supabase.table("group_members").select("user_id, profiles(name)").eq("group_id", group_id).execute()
+    return [{"user_id": m["user_id"], "name": m["profiles"]["name"] if m.get("profiles") else "Unknown"} for m in res.data]

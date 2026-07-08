@@ -10,8 +10,13 @@ from pathlib import Path
 load_dotenv()
 
 # Logging setup ==========================
-ROOT_DIR = Path(__file__).resolve().parents[3]
-LOG_DIR = ROOT_DIR / "logs"
+# if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+LOG_DIR = Path("/tmp/logs")
+# else:
+#     # Your original logic for local Codespace testing
+#     ROOT_DIR = Path(__file__).resolve().parents[3]
+#     LOG_DIR = ROOT_DIR / "logs"
+#
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE_PATH = LOG_DIR / "auth.log"
 
@@ -30,7 +35,7 @@ console_handler.setLevel(logging.ERROR)
 
 formatter = logging.Formatter(
     "%(asctime)s %(levelname)s %(name)s %(message)s"
-)
+    )
 file_handler.setFormatter(formatter)
 console_handler.setFormatter(formatter)
 
