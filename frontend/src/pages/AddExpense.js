@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { apiPost, apiGet, apiPut } from "../api/client";
+import { apiPost, apiGet, apiPut, apiDelete } from "../api/client";
 
 export default function AddExpense({ setPage, currentUser, editExpenseData, setEditExpenseData }) {
   // Read-Only State Lifecycle
@@ -40,7 +40,6 @@ export default function AddExpense({ setPage, currentUser, editExpenseData, setE
         let totalAssigned = 0;
         let splitsArray = editExpenseData.expense_splits || editExpenseData.splits || [];
         
-        // PROPER API CALL: Fetch splits cleanly through the backend API if missing
         if (splitsArray.length === 0 && editExpenseData.group_id) {
           try {
             const data = await apiGet(`/expenses/${editExpenseData.id}/splits`);
@@ -203,17 +202,34 @@ export default function AddExpense({ setPage, currentUser, editExpenseData, setE
     };
 
     try {
+      let responseMessage = "";
       if (editExpenseData) {
-        await apiPut(`/expenses/${editExpenseData.id}`, payload);
-        alert("Expense updated successfully!");
+        const res = await apiPut(`/expenses/${editExpenseData.id}`, payload);
+        responseMessage = res.message || "Expense updated successfully!";
       } else {
-        await apiPost("/expenses", payload);
-        alert("Expense added successfully!");
+        const res = await apiPost("/expenses", payload);
+        responseMessage = res.message || "Expense logged successfully!";
       }
+      alert(responseMessage);
+
       if (setEditExpenseData) setEditExpenseData(null);
       setPage("home"); 
     } catch (error) {
       setErrors({ server: error.detail || "Failed to save expense." });
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm("Are you sure you want to delete this expense? This cannot be undone.")) return;
+    
+    try {
+      await apiDelete(`/expenses/${editExpenseData.id}`);
+      alert("Expense deleted successfully.");
+      
+      if (setEditExpenseData) setEditExpenseData(null);
+      setPage("home");
+    } catch (error) {
+      setErrors({ server: error.detail || "Failed to delete expense." });
     }
   };
 
@@ -296,7 +312,7 @@ export default function AddExpense({ setPage, currentUser, editExpenseData, setE
           </div>
         </div>
 
-        {isReadOnly && editExpenseData && unclaimedAmount > 0.01 && (
+        {isReadOnly && editExpenseData && selectedGroup && unclaimedAmount > 0.01 && (
           <div className="bg-orange-50 border border-orange-200 p-5 rounded-2xl shadow-sm">
             <div className="flex justify-between items-center">
               <span className="text-xs font-bold text-orange-800 uppercase tracking-wider">Unclaimed Remaining</span>
@@ -389,12 +405,24 @@ export default function AddExpense({ setPage, currentUser, editExpenseData, setE
             Edit Expense
           </button>
         ) : (
-          <button 
-            type="submit" 
-            className="w-full bg-aa-blue text-white font-semibold py-4 rounded-xl shadow-lg mt-4 transition-transform active:scale-[0.98]"
-          >
-            {editExpenseData ? "Update Expense" : "Save Expense"}
-          </button>
+          <div className="flex flex-col gap-3 mt-4">
+            <button 
+              type="submit" 
+              className="w-full bg-aa-blue text-white font-semibold py-4 rounded-xl shadow-lg transition-transform active:scale-[0.98]"
+            >
+              {editExpenseData ? "Update Expense" : "Save Expense"}
+            </button>
+
+            {editExpenseData && (
+              <button 
+                type="button" 
+                onClick={handleDelete} 
+                className="w-full bg-white text-red-500 border border-red-200 font-semibold py-4 rounded-xl shadow-sm hover:bg-red-50 transition-colors"
+              >
+                Delete Expense
+              </button>
+            )}
+          </div>
         )}
       </form>
     </div>

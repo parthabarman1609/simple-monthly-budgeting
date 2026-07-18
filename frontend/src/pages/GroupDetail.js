@@ -1,31 +1,36 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiGet } from "../api/client";
 import ExpenseDetail from "./ExpenseDetail"; 
 
 export default function GroupDetail({ groupId, setPage, currentUser }) {
   const [group, setGroup] = useState(null);
   const [expenses, setExpenses] = useState([]);
+  const [balances, setBalances] = useState([]); 
   const [isMembersExpanded, setIsMembersExpanded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
   const [activeExpense, setActiveExpense] = useState(null);
 
-  const fetchGroupData = async () => {
+  // Wrapped in useCallback to satisfy the ESLint dependency array rule
+  const fetchGroupData = useCallback(async () => {
     try {
       const groupData = await apiGet(`/groups/${groupId}`);
       const expensesData = await apiGet(`/groups/${groupId}/expenses`);
+      const balancesData = await apiGet(`/groups/${groupId}/balances`); 
+
       setGroup(groupData);
       setExpenses(Array.isArray(expensesData) ? expensesData : []);
+      setBalances(Array.isArray(balancesData) ? balancesData : []);
     } catch (err) {
       console.error("Failed to load group details", err);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [groupId]);
 
   useEffect(() => {
     if (groupId) fetchGroupData();
-  }, [groupId]);
+  }, [groupId, fetchGroupData]);
 
   if (isLoading) return <div className="p-4 text-center animate-pulse text-gray-500 mt-10">Loading group details...</div>;
   if (!group) return <div className="p-4 text-center">Group not found.</div>;
@@ -44,12 +49,11 @@ export default function GroupDetail({ groupId, setPage, currentUser }) {
     );
   }
 
-  const topMembers = group.members.slice(0, 3).join(", ");
-  const extraCount = group.members.length - 3;
+  const topMembers = group.members?.slice(0, 3).join(", ") || "";
+  const extraCount = (group.members?.length || 0) - 3;
   const memberSummaryText = extraCount > 0 ? `${topMembers} and ${extraCount} others` : topMembers;
 
   return (
-    // FIX: Added overflow-y-auto and kept pb-32 for floating button clearance
     <div className="flex flex-col h-full bg-gray-50/50 animate-fade-in relative pb-32 overflow-y-auto no-scrollbar">
       <div className="bg-white px-4 pt-4 pb-6 shadow-sm z-10 rounded-b-3xl mb-4 border-b border-gray-200">
         <button onClick={() => setPage('groups')} className="text-xs font-bold text-gray-500 hover:text-aa-blue mb-3 uppercase tracking-wider">
@@ -74,12 +78,25 @@ export default function GroupDetail({ groupId, setPage, currentUser }) {
 
         <div className="mt-5 space-y-2">
           <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Balances</h4>
-          {group.balances && group.balances.length > 0 ? (
-            group.balances.map((balance, idx) => (
-              <p key={idx} className="text-xs font-semibold text-[#002147] bg-bg-blue-50/50 px-3 py-2 rounded-lg border border-blue-100/50">{balance}</p>
-            ))
+          {balances.length > 0 ? (
+            balances.map((balance, idx) => {
+              const isMeOwning = balance.from === currentUser?.user_metadata?.full_name || balance.from === "Me";
+              
+              return (
+                <div key={idx} className="flex justify-between items-center text-sm font-semibold text-[#002147] bg-blue-50/50 px-4 py-3 rounded-xl border border-blue-100/50 shadow-sm">
+                  <span>
+                    {balance.from} <span className="text-gray-500 font-normal mx-1">owes</span> {balance.to}
+                  </span>
+                  <span className={`font-bold ${isMeOwning ? 'text-aa-red' : 'text-[#002147]'}`}>
+                    £{balance.amount.toFixed(2)}
+                  </span>
+                </div>
+              );
+            })
           ) : (
-            <p className="text-xs font-semibold text-green-600 bg-green-50 px-3 py-2 rounded-lg border border-green-100 inline-block">All settled up! No outstanding debts.</p>
+            <p className="text-xs font-semibold text-green-600 bg-green-50 px-3 py-2 rounded-lg border border-green-100 inline-block">
+              All settled up! No outstanding debts.
+            </p>
           )}
         </div>
       </div>

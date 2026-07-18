@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks
 from fastapi import HTTPException
+from fastapi.responses import JSONResponse
+from fastapi import Query
 from pydantic import BaseModel
 from common.supabase import supabase
 from common.auth import get_current_user
@@ -90,21 +92,51 @@ CATEGORY_KEYWORDS = {
 # 2. HEURISTIC PROCESSING FUNCTIONS
 # ==========================================
 def clean_description(desc: str) -> str:
-    """Removes URLs, long transaction IDs, special chars, and limits to 10 words."""
-    if pd.isna(desc): return "Unknown Merchant"
-    desc = str(desc)
+    """Removes URLs, alphanumeric transaction IDs (10+ chars, 3+ numbers), and generic bank codes."""
     
+    if pd.isna(desc) or not str(desc).strip(): 
+        return "Unknown Merchant"
+        
+    original_desc = str(desc)
+    cleaned = original_desc
+    
+    # --- PRIMARY AGGRESSIVE CLEANING ---
     # 1. Strip URLs (e.g., https://help.uber.com)
-    desc = re.sub(r'https?://\S+', '', desc, flags=re.IGNORECASE)
-    # 2. Strip long bank/transaction IDs (10+ alphanumeric characters)
-    desc = re.sub(r'[A-Za-z0-9]{10,}', '', desc)
-    # 3. Strip special characters except spaces and dots
-    desc = re.sub(r'[^A-Za-z0-9\s.,]', ' ', desc)
-    # 4. Remove extra whitespaces
-    desc = re.sub(r'\s+', ' ', desc).strip()
+    cleaned = re.sub(r'https?://\S+', '', cleaned, flags=re.IGNORECASE)
     
-    # 5. Truncate to first 10 words
-    words = desc.split()[:10]
+    # 2. Strip strings of 10+ chars ONLY if they contain at least 3 numbers.
+    # The lookahead (?=(?:[A-Za-z]*[0-9]){3}) ensures 3 digits exist within the word boundary.
+    cleaned = re.sub(r'\b(?=(?:[A-Za-z]*[0-9]){3})[A-Za-z0-9]{10,}\b', '', cleaned)
+    
+    # 3. Softly strip generic banking codes (Direct Debit, Visa, etc.)
+    prefixes_to_strip = [r'\bDD\b', r'\bDDR\b', r'\bVIS\b', r'\bCR\b', r'\bPOS\b']
+    for prefix in prefixes_to_strip:
+        cleaned = re.sub(prefix, '', cleaned, flags=re.IGNORECASE)
+    
+    # 4. Strip special characters except spaces and dots
+    cleaned = re.sub(r'[^A-Za-z0-9\s.,]', ' ', cleaned)
+    
+    # 5. Remove extra whitespaces
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    
+    # --- FALLBACK SAFETY NET ---
+    # If the aggressive cleaning wiped out the entire string, revert and use safe rules!
+    if not cleaned:
+        cleaned = original_desc
+        # 1. Strip URLs
+        cleaned = re.sub(r'https?://\S+', '', cleaned, flags=re.IGNORECASE)
+        # 2. Strip special characters except spaces and dots
+        cleaned = re.sub(r'[^A-Za-z0-9\s.,]', ' ', cleaned)
+        # 3. Remove extra whitespaces
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        
+        # If it is SOMEHOW still blank after safe rules, provide a default
+        if not cleaned:
+            return "Unknown Merchant"
+    
+    # --- FINAL FORMATTING ---
+    # Truncate to first 10 words to keep the database tidy
+    words = cleaned.split()[:10]
     return " ".join(words)
 
 def assign_category(clean_desc: str, dynamic_categories: list) -> str:
@@ -272,7 +304,7 @@ async def process_csv_background(file_content: bytes, user_id: str):
         for i in range(0, len(rows_to_insert), chunk_size):
             chunk = rows_to_insert[i:i + chunk_size]
             logger.info(f"Inserting chunk of {chunk} expenses for user {user_id}")
-            #supabase.table("expenses").insert(chunk).execute()
+            supabase.table("expenses").insert(chunk).execute()
 
         logger.info(f"Successfully processed and inserted {len(rows_to_insert)} expenses for user {user_id}")
 
@@ -362,9 +394,16 @@ def create_expense(expense: ExpenseCreate, user: dict = Depends(get_current_user
     expense_id = res.data[0]["id"]
 
     if expense.group_id and expense.splits:
-        apply_unified_splits(expense_id, expense.group_id, expense.amount, expense.splits)
+        try:
+            apply_unified_splits(expense_id, expense.group_id, expense.amount, expense.splits)
+        except HTTPException as e:
+            # The expense was saved, but the splits failed. Return a 206 Partial Content!
+            return JSONResponse(
+                status_code=206, 
+                content={"message": f"Expense added, but splits failed: {e.detail}. Try splitting later."}
+            )
 
-    return {"message": "Expense created.", "expense_id": expense_id}
+    return {"message": "Expense logged successfully!", "expense_id": expense_id}
 
 @router.post("/api/v1/expenses/bulk")
 async def bulk_upload(
@@ -404,20 +443,45 @@ def share_expense(expense_id: str, payload: ShareRequest, user: dict = Depends(g
     return {"message": "Expense splits successfully updated!"}
 
 @router.get("/api/v1/expenses")
-def get_expenses(user: dict = Depends(get_current_user)):
+def get_expenses(
+    limit: int = Query(..., ge=1, description="Page size requested by frontend"), 
+    offset: int = Query(..., ge=0, description="Items to skip"), 
+    user: dict = Depends(get_current_user)
+    ):
     user_id = user["sub"]
     
-    # Fetch all expenses paid by this user, ordered by newest first
-    res = supabase.table("expenses").select("*").eq("payer_id", user_id).order("date", desc=True).execute()
+    # Notice count="exact" - this asks Supabase for the total matching rows safely
+    res = supabase.table("expenses") \
+        .select("*, expense_splits(*)", count="exact") \
+        .eq("payer_id", user_id) \
+        .order("date", desc=True) \
+        .order("id", desc=True) \
+        .range(offset, offset + limit - 1) \
+        .execute()
+        
+    total_count = res.count if res.count is not None else 0
+    data = res.data
     
-    return res.data
+    # Explicitly calculate if there is more data
+    has_more = (offset + limit) < total_count
+    
+    # Return a proper paginated envelope
+    return {
+        "data": data,
+        "pagination": {
+            "total_records": total_count,
+            "limit": limit,
+            "offset": offset,
+            "has_more": has_more
+        }
+    }
 
 @router.patch("/api/v1/expenses/{expense_id}/claim")
 def claim_expense(
     expense_id: str,
     payload: ClaimRequest,
     user: dict = Depends(get_current_user)
-):
+    ):
     user_id = user["sub"]
 
     # 1. Get the original expense total
@@ -484,3 +548,19 @@ def get_expense_splits(expense_id: str, user: dict = Depends(get_current_user)):
     res = supabase.table("expense_splits").select("*").eq("expense_id", expense_id).execute()
     return res.data
 
+@router.delete("/api/v1/expenses/{expense_id}")
+def delete_expense(expense_id: str, user: dict = Depends(get_current_user)):
+    user_id = user["sub"]
+    
+    # 1. Verify ownership (only the payer can delete)
+    check = supabase.table("expenses").select("payer_id").eq("id", expense_id).execute()
+    if not check.data or check.data[0]["payer_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this expense.")
+        
+    # 2. Delete the splits first to avoid foreign key constraint errors
+    supabase.table("expense_splits").delete().eq("expense_id", expense_id).execute()
+    
+    # 3. Delete the expense itself
+    supabase.table("expenses").delete().eq("id", expense_id).execute()
+    
+    return {"message": "Expense deleted successfully"}

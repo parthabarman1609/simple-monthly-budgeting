@@ -34,7 +34,7 @@ export default function AcceptInvite({ token, setPage }) {
         
         // Clean the token from the URL so it doesn't trigger again on refresh
         window.history.replaceState({}, document.title, "/");
-        setPage("group"); // Redirect to groups tab
+        setPage("groups"); // Redirect to groups tab
       } else {
         alert(`Error: ${res.detail}`);
       }

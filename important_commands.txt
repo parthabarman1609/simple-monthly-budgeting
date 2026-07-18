@@ -1,35 +1,45 @@
-1. uvicorn services.expenseService.main:app --reload --host 0.0.0.0 --port 8002
-2. lsof -i :8002
-3. kill -9 [PID]
+## starting backend API server
+uvicorn services.expenseService.main:app --reload --host 0.0.0.0 --port 8002
+lsof -i :8002
+kill -9 [PID]
 
-{
-  "amount": 25.5,
-  "description": "Dinner at Cargo Hall",
-  "category": "Eating out",
-  "date": "2026-05-10",
-  "group_id": "parthabarman",
-  "splits": [
-    {
-      "user_id": "04a26012-7d92-4daa-823f-198b2390192d",
-      "amount": 12.75
-    }
-  ]
-}
+## starting frontend UI server
+npm start
 
-{
-  "amount": 60,
-  "description": "Cargo Hall Lunch",
-  "category": "Eating out",
-  "date": "2026-05-23",
-  "group_id": "04a26012-7d92-4daa-823f-198b2390193a",
-  "splits": [
-    {
-      "user_id": "04a26012-7d92-4daa-823f-198b2390192d",
-      "amount": 40
-    },
-    {
-      "user_id": "21d4ccc0-0d03-4437-b409-8c1721c61585",
-      "amount": 20
-    }
-  ]
-}
+## deploy backend
+# 1. [To Be Avoided]Create a clean requirements file
+pip freeze > requirements.txt
+
+# 2. if package and deployment.zip already exists [not needed if requirements.txt hasn't changed]
+rm -rf package deployment.zip
+
+# 3. Create a temporary folder for packaging [not needed if requirements.txt hasn't changed]
+mkdir package
+
+# 4. Install all your dependencies directly into that folder [not needed if requirements.txt hasn't changed]
+pip install -r requirements.txt --target ./package
+
+# 5. Copy your application code and .env file into the folder [not needed if requirements.txt hasn't changed]
+cp -r services package/
+cp -r common package/
+cp main.py package/
+
+# 6. Navigate into the folder and zip everything up!
+cd package
+zip -r ../deployment.zip .
+OR
+zip -ur deployment.zip common services main.py
+
+# 7. download the deployment.zip
+python -m http.server 8080
+
+## committing to git
+cd frontend
+git status
+git add frontend
+git reset -- frontend --in case need to unstage
+git commit -m "Your commit message"
+git push
+
+## sample API requests
+<>

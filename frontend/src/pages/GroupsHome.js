@@ -66,11 +66,19 @@ export default function GroupsHome({ setPage, setActiveGroupId }) {
                   <h4 className="text-sm font-medium text-gray-800 mb-1">Balances</h4>
                   <div className="space-y-0.5">
                     {group.balances && group.balances.length > 0 ? (
-                      group.balances.slice(0, 3).map((balance, idx) => (
-                        <p key={idx} className="text-sm text-gray-800 font-medium">
-                          {balance}
-                        </p>
-                      ))
+                      <>
+                        {/* Slice strictly the top 3 balances */}
+                        {group.balances.slice(0, 3).map((balance, idx) => (
+                          <p key={idx} className="text-sm text-gray-800 font-medium">
+                            {balance}
+                          </p>
+                        ))}
+                        
+                        {/* If there are more than 3, show the truncated text */}
+                        {group.balances.length > 3 && (
+                          <p className="text-sm text-gray-500 italic mt-1">... and more.</p>
+                        )}
+                      </>
                     ) : (
                       <p className="text-sm text-gray-500 italic">No pending balances.</p>
                     )}
@@ -84,10 +92,10 @@ export default function GroupsHome({ setPage, setActiveGroupId }) {
       </div>
 
       {/* Floating Create Button (Centered as per wireframe, styled as per AA theme) */}
-      <div className="absolute bottom-6 left-0 w-full flex justify-center px-4">
+      <div className="absolute bottom-6 left-0 w-full flex justify-center px-4 z-40">
         <button 
           onClick={() => setPage('create_group')} 
-          className="w-full max-w-[250px] bg-aa-blue text-white font-semibold py-3 rounded-xl shadow-lg hover:bg-[#002147] transition-all text-sm"
+          className="w-full max-w-[250px] bg-aa-blue text-white font-semibold py-3 rounded-xl shadow-lg hover:bg-[#002147] transition-all text-sm active:scale-[0.98]"
         >
           Create a New Group
         </button>

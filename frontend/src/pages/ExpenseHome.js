@@ -5,8 +5,13 @@ export default function ExpensesHome({ setPage, currentUser, setEditExpenseData 
   const [expenses, setExpenses] = useState([]); 
   const [groups, setGroups] = useState([]); 
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Lazy Loading State
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const LIMIT = 15; /* Number of items to fetch per request */
 
-  // Granular Share Modal State (Restored for unshared expenses)
+  // Share Modal State
   const [isShareModalOpen, setShareModalOpen] = useState(false);
   const [activeExpense, setActiveExpense] = useState(null);
   const [selectedGroup, setSelectedGroup] = useState("");
@@ -16,7 +21,7 @@ export default function ExpensesHome({ setPage, currentUser, setEditExpenseData 
   const [memberValues, setMemberValues] = useState({});
 
   useEffect(() => {
-    fetchExpenses();
+    fetchExpenses(0, true);
     fetchGroups();
   }, []);
 
@@ -30,12 +35,36 @@ export default function ExpensesHome({ setPage, currentUser, setEditExpenseData 
     }
   }, [selectedGroup]);
 
-  const fetchExpenses = async () => {
-    setIsLoading(true);
+const fetchExpenses = async (currentOffset = 0, reset = false) => {
+    if (reset) {
+      setIsLoading(true);
+      setHasMore(true); 
+    }
+    
     try {
-      const data = await apiGet("/expenses");
-      if (Array.isArray(data)) setExpenses(data);
-    } catch (err) {} finally { setIsLoading(false); }
+      const response = await apiGet(`/expenses?limit=${LIMIT}&offset=${currentOffset}`);
+      
+      // Unwrap the new API envelope!
+      if (response && response.data) {
+        const { data, pagination } = response;
+        
+        // Use the explicit boolean from the backend
+        setHasMore(pagination.has_more);
+        
+        // Append or reset the data
+        setExpenses(prev => reset ? data : [...prev, ...data]);
+      }
+    } catch (err) {
+      console.error("Failed to fetch paginated expenses", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadMore = () => {
+    const newOffset = offset + LIMIT;
+    setOffset(newOffset);
+    fetchExpenses(newOffset, false);
   };
 
   const fetchGroups = async () => {
@@ -51,7 +80,7 @@ export default function ExpensesHome({ setPage, currentUser, setEditExpenseData 
   };
 
   const handleOpenShare = (e, exp) => {
-    e.stopPropagation(); // Prevents the row click from firing
+    e.stopPropagation(); 
     setActiveExpense(exp);
     setSelectedGroup("");
     setShareModalOpen(true);
@@ -70,23 +99,17 @@ export default function ExpensesHome({ setPage, currentUser, setEditExpenseData 
 
   const handleShareSubmit = async () => {
     if (!selectedGroup) return alert("Please select a group");
-    
-    const splitsToSubmit = Object.keys(includedMembers)
-      .filter(id => includedMembers[id])
-      .map(id => ({
-        user_id: id,
-        share_type: memberModes[id] || 'equal',
-        share_value: memberValues[id] || ""
-      }));
+    const splitsToSubmit = Object.keys(includedMembers).filter(id => includedMembers[id]).map(id => ({
+      user_id: id, share_type: memberModes[id] || 'equal', share_value: memberValues[id] || ""
+    }));
 
     try {
-      await apiPatch(`/expenses/${activeExpense.id}/share`, {
-        group_id: selectedGroup,
-        splits: splitsToSubmit
-      });
+      await apiPatch(`/expenses/${activeExpense.id}/share`, { group_id: selectedGroup, splits: splitsToSubmit });
       alert("Expense shared successfully!");
       setShareModalOpen(false);
-      fetchExpenses(); 
+      fetchExpenses(0, true); 
+      setOffset(0);
+      setHasMore(true);
     } catch (error) {
       alert(`Server Error: ${error.detail || "Failed to process the split calculations."}`);
     }
@@ -112,53 +135,51 @@ export default function ExpensesHome({ setPage, currentUser, setEditExpenseData 
             <p className="text-gray-500 font-medium">No expenses found.</p>
           </div>
         ) : (
-          expenses.map((exp) => (
-            <div 
-              key={exp.id} 
-              onClick={() => handleRowClick(exp)}
-              className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm flex items-stretch cursor-pointer hover:shadow-md transition-all group"
-            >
-              <div className="flex-1 flex flex-col justify-center pr-4">
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-lg font-bold text-[#002147] leading-tight group-hover:text-aa-blue transition-colors">
-                    {exp.description}
-                  </span>
-                  <span className="text-lg font-bold text-[#002147]">£{exp.amount}</span>
+          <>
+            {expenses.map((exp) => (
+              <div key={exp.id} onClick={() => handleRowClick(exp)} className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm flex items-stretch cursor-pointer hover:shadow-md transition-all group">
+                <div className="flex-1 flex flex-col justify-center pr-4">
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="text-lg font-bold text-[#002147] leading-tight group-hover:text-aa-blue transition-colors">{exp.description}</span>
+                    <span className="text-lg font-bold text-[#002147]">£{exp.amount}</span>
+                  </div>
+                  <div className="flex gap-4 text-xs font-medium text-gray-500 mb-1">
+                    <span>{exp.date}</span>
+                  </div>
+                  {exp.group_id && (
+                    <div className="text-[10px] font-medium text-gray-600 mt-2 bg-gray-50 inline-block px-2 py-1 rounded-md border border-gray-100 self-start">
+                      Group: <span className="font-bold">{getGroupName(exp.group_id)}</span>
+                    </div>
+                  )}
                 </div>
-                <div className="flex gap-4 text-xs font-medium text-gray-500 mb-1">
-                  <span>{exp.date}</span>
+                
+                <div className="border-l-2 border-dashed border-gray-200 mx-2"></div>
+                
+                <div className="w-24 flex items-center justify-center pl-2">
+                  {exp.group_id ? (
+                    <div className="text-center w-full">
+                      <span className={`block px-2 py-2 text-[10px] uppercase tracking-wider font-bold rounded-xl border border-dashed ${exp.status === 'settled' ? 'bg-blue-50 border-aa-blue text-aa-blue' : 'bg-gray-50 border-gray-400 text-gray-600'}`}>
+                        {exp.status === 'settled' ? 'Settled' : 'Pending'}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="w-full flex items-center justify-center">
+                      <button onClick={(e) => handleOpenShare(e, exp)} className="w-full py-2.5 text-xs font-bold text-aa-blue bg-white border-2 border-aa-blue rounded-xl shadow-sm hover:bg-blue-50 transition-colors">
+                        Share
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {exp.group_id && (
-                  <div className="text-[10px] font-medium text-gray-600 mt-2 bg-gray-50 inline-block px-2 py-1 rounded-md border border-gray-100 self-start">
-                    Group: <span className="font-bold">{getGroupName(exp.group_id)}</span>
-                  </div>
-                )}
               </div>
-              
-              <div className="border-l-2 border-dashed border-gray-200 mx-2"></div>
-              
-              <div className="w-24 flex items-center justify-center pl-2">
-                {exp.group_id ? (
-                  <div className="text-center w-full">
-                    <span className={`block px-2 py-2 text-[10px] uppercase tracking-wider font-bold rounded-xl border border-dashed ${
-                      exp.status === 'settled' ? 'bg-blue-50 border-aa-blue text-aa-blue' : 'bg-gray-50 border-gray-400 text-gray-600'
-                    }`}>
-                      {exp.status === 'settled' ? 'Settled' : 'Pending'}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="w-full flex items-center justify-center">
-                    <button 
-                      onClick={(e) => handleOpenShare(e, exp)}
-                      className="w-full py-2.5 text-xs font-bold text-aa-blue bg-white border-2 border-aa-blue rounded-xl shadow-sm hover:bg-blue-50 transition-colors"
-                    >
-                      Share
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))
+            ))}
+            
+            {/* LAZY LOAD BUTTON */}
+            {hasMore && (
+              <button onClick={loadMore} className="w-full py-3 text-xs font-bold text-gray-500 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors mt-4">
+                Load More ↓
+              </button>
+            )}
+          </>
         )}
       </div>
 
@@ -171,7 +192,7 @@ export default function ExpensesHome({ setPage, currentUser, setEditExpenseData 
         </button>
       </div>
 
-      {/* Restored Quick Share Modal for Unshared Expenses */}
+      {/* Share Modal Fully Included */}
       {isShareModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl flex flex-col max-h-[85vh]">

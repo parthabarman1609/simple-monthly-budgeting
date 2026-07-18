@@ -5,19 +5,14 @@ from typing import List
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel, EmailStr
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
+from collections import defaultdict
 
 # Import your actual Supabase client and Auth function
 from common.supabase import supabase
 from common.auth import get_current_user
 
 # Logging setup ==========================
-# if os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
 LOG_DIR = Path("/tmp/logs")
-# else:
-#     # Your original logic for local Codespace testing
-#     ROOT_DIR = Path(__file__).resolve().parents[3]
-#     LOG_DIR = ROOT_DIR / "logs"
-#
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE_PATH = LOG_DIR / "groupService.log"
 
@@ -36,7 +31,7 @@ console_handler.setLevel(logging.ERROR)
 
 formatter = logging.Formatter(
     "%(asctime)s %(levelname)s %(name)s %(message)s"
-    )
+)
 file_handler.setFormatter(formatter)
 console_handler.setFormatter(formatter)
 
@@ -47,7 +42,7 @@ logger.addHandler(console_handler)
 router = APIRouter()
 
 # ==========================================
-# 1. PYDANTIC MODELS (From Part A)
+# 1. PYDANTIC MODELS
 # ==========================================
 class GroupCreateRequest(BaseModel):
     name: str
@@ -57,9 +52,8 @@ class InviteMembersRequest(BaseModel):
     invitees: List[EmailStr]
 
 # ==========================================
-# 2. EMAIL CONFIGURATION (From Part A)
+# 2. EMAIL CONFIGURATION
 # ==========================================
-
 conf = ConnectionConfig(
     MAIL_USERNAME=os.getenv("MAIL_USERNAME", "your-email@gmail.com"),
     MAIL_PASSWORD=os.getenv("MAIL_PASSWORD", "your-16-char-password"),
@@ -75,11 +69,10 @@ conf = ConnectionConfig(
 fast_mail = FastMail(conf)
 
 # ==========================================
-# 3. BACKGROUND TASKS (From Part B)
+# 3. BACKGROUND TASKS
 # ==========================================
 async def send_invitation_emails(invitations: list, group_name: str):
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-    print(frontend_url)
 
     for invite in invitations:
         invite_link = f"{frontend_url}/invite?token={invite['token']}"
@@ -106,14 +99,12 @@ async def send_invitation_emails(invitations: list, group_name: str):
             logger.info("Invitation email sent to %s for group %s", invite['email'], group_name)
         except Exception as e:
             error_msg = f"Failed to send email to {invite['email']}: {str(e)}"
-            print(error_msg)
             logger.error(error_msg)
 
 # ==========================================
-# 4. API ENDPOINTS (From Part C & Previous Steps)
+# 4. API ENDPOINTS
 # ==========================================
 
-# GET all groups for the logged-in user
 @router.get("/api/v1/groups")
 def get_my_groups(user: dict = Depends(get_current_user)):
     user_id = user["sub"]
@@ -128,17 +119,15 @@ def get_my_groups(user: dict = Depends(get_current_user)):
             })
     return my_groups
 
-# POST create a new group and send emails
 @router.post("/api/v1/groups")
 async def create_group(
     request: GroupCreateRequest, 
     background_tasks: BackgroundTasks,
-    user: dict = Depends(get_current_user) # Using your actual auth
-):
+    user: dict = Depends(get_current_user)
+    ):
     user_id = user["sub"]
     
     try:
-        # Insert new group
         group_res = supabase.table("groups").insert({
             "name": request.name,
             "created_by": user_id
@@ -149,13 +138,11 @@ async def create_group(
             
         new_group_id = group_res.data[0]['id']
 
-        # Add creator as first member
         supabase.table("group_members").insert({
             "group_id": new_group_id,
             "user_id": user_id
         }).execute()
 
-        # Handle Invitations
         emails_to_dispatch = []
         if request.invitees:
             invites_payload = [
@@ -176,16 +163,12 @@ async def create_group(
                         "token": invite_record["token"]
                     })
 
-        # Trigger Background Emails
         if emails_to_dispatch:
             background_tasks.add_task(
                 send_invitation_emails, 
                 invitations=emails_to_dispatch, 
                 group_name=request.name
             )
-
-        logger.info("Group created successfully: %s by user %s", request.name, user_id)
-        logger.debug("Invitations queued for emails: %s", [invite['email'] for invite in emails_to_dispatch])
 
         return {
             "message": "Group created successfully",
@@ -194,12 +177,9 @@ async def create_group(
         }
 
     except Exception as e:
-        error_msg = f"Error in create_group: {str(e)}"
-        print(error_msg)
-        logger.error(error_msg, exc_info=True)
+        logger.error(f"Error in create_group: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="An internal server error occurred.")
 
-# GET validate an invite token
 @router.get("/api/v1/invites/{token}")
 def get_invite_details(token: str):
     res = supabase.table("group_invitations").select("*, groups(name)").eq("token", token).eq("status", "pending").execute()
@@ -213,7 +193,6 @@ def get_invite_details(token: str):
         "invited_email": res.data[0]["invited_email"]
     }
 
-# POST accept an invite
 @router.post("/api/v1/invites/{token}/accept")
 def accept_invite(token: str, user: dict = Depends(get_current_user)):
     user_id = user["sub"]
@@ -236,75 +215,141 @@ def accept_invite(token: str, user: dict = Depends(get_current_user)):
 
     return {"message": "Successfully joined the group!"}
 
+# =========================================================
+# REAL MCF BALANCES LOGIC FOR GROUP HOME
+# =========================================================
 @router.get("/api/v1/groups/summary")
 def get_groups_summary(user: dict = Depends(get_current_user)):
     user_id = user["sub"]
     
     # 1. Get groups the user belongs to
     groups_res = supabase.table("group_members").select("group_id, groups(id, name)").eq("user_id", user_id).execute()
+    if not groups_res.data:
+        return []
+
+    group_ids = []
+    result_map = {}
     
-    result = []
     for row in groups_res.data:
-        if not row.get("groups"):
-            continue
+        if row.get("groups"):
+            g_id = row["group_id"]
+            group_ids.append(g_id)
+            result_map[g_id] = {
+                "id": g_id,
+                "name": row["groups"]["name"],
+                "members": [],
+                "balances": []
+            }
+    
+    if not group_ids:
+        return []
+
+    # 2. Get all members' names for these groups
+    members_res = supabase.table("group_members").select("group_id, user_id, profiles(name)").in_("group_id", group_ids).execute()
+    name_map = {}
+    
+    for m in members_res.data:
+        g_id = m["group_id"]
+        u_id = m["user_id"]
+        name = m["profiles"]["name"] if m.get("profiles") else "Unknown"
+        name_map[u_id] = name
+        if g_id in result_map:
+            result_map[g_id]["members"].append(name)
+
+    # 3. Fetch expenses for these groups
+    expenses_res = supabase.table("expenses").select("id, group_id, payer_id").in_("group_id", group_ids).execute()
+    
+    group_expenses = defaultdict(list)
+    expense_payer_map = {}
+    expense_ids = []
+    
+    for e in expenses_res.data:
+        group_expenses[e["group_id"]].append(e)
+        expense_payer_map[e["id"]] = e["payer_id"]
+        expense_ids.append(e["id"])
+
+    # 4. Fetch ONLY unsettled splits associated with these expenses
+    splits_by_exp = defaultdict(list)
+    if expense_ids:
+        splits_res = supabase.table("expense_splits").select("*").in_("expense_id", expense_ids).neq("status", "settled").execute()
+        for s in splits_res.data:
+            splits_by_exp[s["expense_id"]].append(s)
+
+    # 5. Run the Debt Calculator engine per group
+    for g_id, g_data in result_map.items():
+        balances = defaultdict(float)
+        exps = group_expenses.get(g_id, [])
+        
+        for ex in exps:
+            for sp in splits_by_exp.get(ex["id"], []):
+                payer = expense_payer_map[ex["id"]]
+                borrower = sp["user_id"]
+                amt = float(sp.get("amount_owed", sp.get("amount", 0)))
+                
+                balances[payer] += amt
+                balances[borrower] -= amt
+
+        debtors, creditors = [], []
+        for uid, bal in balances.items():
+            r_bal = round(bal, 2)
+            if r_bal < -0.01: 
+                debtors.append([uid, abs(r_bal)])
+            elif r_bal > 0.01: 
+                creditors.append([uid, r_bal])
+
+        # Sort descending to match largest debts first
+        debtors.sort(key=lambda x: x[1], reverse=True)
+        creditors.sort(key=lambda x: x[1], reverse=True)
+
+        transactions = []
+        i, j = 0, 0 
+
+        while i < len(debtors) and j < len(creditors):
+            d_id, d_amt = debtors[i]
+            c_id, c_amt = creditors[j]
+            settle_amount = min(d_amt, c_amt)
             
-        group_id = row["groups"]["id"]
+            if settle_amount > 0:
+                payer_name = "You" if d_id == user_id else name_map.get(d_id, "Unknown")
+                payee_name = "You" if c_id == user_id else name_map.get(c_id, "Unknown")
+                transactions.append(f"{payer_name} owes {payee_name} £{settle_amount:.2f}")
+
+            debtors[i][1] = round(d_amt - settle_amount, 2)
+            creditors[j][1] = round(c_amt - settle_amount, 2)
+
+            if debtors[i][1] <= 0:
+                i += 1
+            if creditors[j][1] <= 0:
+                j += 1
+                
+        result_map[g_id]["balances"] = transactions
         
-        # 2. Get all members' names for this group
-        members_res = supabase.table("group_members").select("profiles(name)").eq("group_id", group_id).execute()
-        member_names = [m["profiles"]["name"] for m in members_res.data if m.get("profiles")]
-        
-        # 3. Append to result with simulated balances
-        result.append({
-            "id": group_id,
-            "name": row["groups"]["name"],
-            "members": member_names,
-            "balances": [
-                "You owe John - £45.00",
-                "Sarah owes You - £12.50"
-            ] # Replace this array with your actual settlement algorithm later!
-        })
-        
-    return result
+    return list(result_map.values())
 
 @router.get("/api/v1/groups/{group_id}")
 def get_group_detail(group_id: str, user: dict = Depends(get_current_user)):
-    # 1. Verify user is in group and fetch name
     group_res = supabase.table("groups").select("name").eq("id", group_id).execute()
     if not group_res.data:
         raise HTTPException(status_code=404, detail="Group not found")
         
-    # 2. Get Members
     members_res = supabase.table("group_members").select("profiles(name)").eq("group_id", group_id).execute()
     member_names = [m["profiles"]["name"] for m in members_res.data if m.get("profiles")]
 
     return {
         "id": group_id,
         "name": group_res.data[0]["name"],
-        "members": member_names,
-        "balances": [
-            "You owe John - £45.00",
-            "Sarah owes You - £12.50",
-            "Michael owes John - £20.00"
-        ]
+        "members": member_names
     }
 
 @router.get("/api/v1/groups/{group_id}/expenses")
 def get_group_expenses(group_id: str, user: dict = Depends(get_current_user)):
-    # UPDATED: We use a nested select to automatically join the expense_splits table
-    # This provides the frontend with the array of claims for each expense!
     res = supabase.table("expenses")\
         .select("*, expense_splits(*, profiles(name))")\
         .eq("group_id", group_id)\
         .order("date", desc=True)\
         .execute()
     
-    expenses = []
-    for exp in res.data:
-        exp["status"] = "pending" # You can update this logic later
-        expenses.append(exp)
-        
-    return expenses
+    return res.data
 
 @router.post("/api/v1/groups/{group_id}/invites")
 async def invite_members_to_group(
@@ -312,21 +357,18 @@ async def invite_members_to_group(
     request: InviteMembersRequest,
     background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user)
-):
+    ):
     user_id = user["sub"]
 
-    # 1. Verify the group exists and get its name for the email
     group_res = supabase.table("groups").select("name").eq("id", group_id).execute()
     if not group_res.data:
         raise HTTPException(status_code=404, detail="Group not found")
     group_name = group_res.data[0]["name"]
 
-    # 2. Security Check: Ensure the user sending invites is actually in the group!
     member_res = supabase.table("group_members").select("*").eq("group_id", group_id).eq("user_id", user_id).execute()
     if not member_res.data:
         raise HTTPException(status_code=403, detail="You must be a member of this group to invite others.")
 
-    # 3. Handle Invitations
     emails_to_dispatch = []
     if request.invitees:
         invites_payload = [
@@ -347,10 +389,8 @@ async def invite_members_to_group(
                         "token": invite_record["token"]
                     })
         except Exception as e:
-            # Catch unique constraint errors (e.g., if an email is already invited)
             raise HTTPException(status_code=400, detail="Failed to send invites. One or more users may already be invited.")
 
-    # 4. Trigger Background Emails
     if emails_to_dispatch:
         background_tasks.add_task(
             send_invitation_emails, 
@@ -367,3 +407,78 @@ async def invite_members_to_group(
 def get_group_members_list(group_id: str, user: dict = Depends(get_current_user)):
     res = supabase.table("group_members").select("user_id, profiles(name)").eq("group_id", group_id).execute()
     return [{"user_id": m["user_id"], "name": m["profiles"]["name"] if m.get("profiles") else "Unknown"} for m in res.data]
+
+# =========================================================
+# BULLETPROOF MCF LOGIC FOR GROUP DETAIL
+# =========================================================
+@router.get("/api/v1/groups/{group_id}/balances")
+def get_group_balances(group_id: str, user: dict = Depends(get_current_user)):
+    # 1. Fetch expenses for the group
+    exp_res = supabase.table("expenses").select("id, payer_id").eq("group_id", group_id).execute()
+    expenses = exp_res.data
+    
+    if not expenses:
+        return []
+
+    expense_ids = [e["id"] for e in expenses]
+    expense_payer_map = {e["id"]: e["payer_id"] for e in expenses}
+
+    # 2. Fetch ONLY unsettled splits associated with these expenses
+    splits_res = supabase.table("expense_splits").select("*").in_("expense_id", expense_ids).neq("status", "settled").execute()
+    splits = splits_res.data
+
+    # 3. Calculate Net Balances
+    balances = defaultdict(float)
+    
+    for split in splits:
+        payer_id = expense_payer_map[split["expense_id"]]
+        borrower_id = split["user_id"]
+        amount = float(split.get("amount_owed", split.get("amount", 0)))
+
+        balances[payer_id] += amount
+        balances[borrower_id] -= amount
+
+    user_ids = list(balances.keys())
+    profiles_res = supabase.table("profiles").select("id, name").in_("id", user_ids).execute()
+    name_map = {p["id"]: p["name"] for p in profiles_res.data}
+
+    # 4. Separate into Debtors and Creditors with strict rounding
+    debtors = []   
+    creditors = [] 
+
+    for uid, balance in balances.items():
+        r_bal = round(balance, 2)
+        if r_bal < -0.01:
+            debtors.append([uid, abs(r_bal)])
+        elif r_bal > 0.01:
+            creditors.append([uid, r_bal])
+
+    # 5. The Greedy Matchmaker Engine (MUST BE SORTED DESCENDING)
+    debtors.sort(key=lambda x: x[1], reverse=True)
+    creditors.sort(key=lambda x: x[1], reverse=True)
+
+    transactions = []
+    i, j = 0, 0 
+
+    while i < len(debtors) and j < len(creditors):
+        debtor_id, debt_amount = debtors[i]
+        creditor_id, credit_amount = creditors[j]
+
+        settle_amount = min(debt_amount, credit_amount)
+        
+        if settle_amount > 0:
+            transactions.append({
+                "from": name_map.get(debtor_id, "Unknown"),
+                "to": name_map.get(creditor_id, "Unknown"),
+                "amount": round(settle_amount, 2)
+            })
+
+        debtors[i][1] = round(debt_amount - settle_amount, 2)
+        creditors[j][1] = round(credit_amount - settle_amount, 2)
+
+        if debtors[i][1] <= 0:
+            i += 1
+        if creditors[j][1] <= 0:
+            j += 1
+
+    return transactions

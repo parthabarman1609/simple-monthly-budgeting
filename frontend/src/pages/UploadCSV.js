@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { apiPost } from "../api/client"; // Import our upgraded client
+import { apiPost } from "../api/client"; 
 
-export default function UploadCSV() {
+export default function UploadCSV({ setPage }) {
   const [file, setFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [pendingSplits] = useState([]);
 
   const handleUpload = async () => {
     if (!file) return;
@@ -14,11 +13,10 @@ export default function UploadCSV() {
     formData.append("file", file);
 
     try {
-      // Pass 'true' as the third argument to trigger a multipart/form-data upload
       const res = await apiPost("/expenses/bulk", formData, true);
       
-      if (res.status === "uploaded") {
-        alert(`Successfully uploaded ${res.count} expenses!`);
+      if (res.status === "processing") {
+        alert(`${res.message}`);
         setFile(null);
       } else {
         alert(`Upload failed: ${res.error}`);
@@ -30,69 +28,104 @@ export default function UploadCSV() {
     }
   };
 
+  // Placeholder array for the up to 5 blank job cards
+  const placeholderJobs = [1, 2, 3];
+
   return (
-    <div className="animate-fade-in pb-10">
-      <h2 className="text-xl font-bold text-aa-blue mb-4">Upload Expenses</h2>
+    <div className="flex flex-col h-full bg-gray-50/50 p-4 animate-fade-in relative pb-32 overflow-y-auto no-scrollbar">
+      
+      {/* Header aligned with the rest of the app */}
+      <div className="mb-6 flex justify-between items-end">
+        <div>
+          <h2 className="text-2xl text-[#002147] font-bold font-logo mb-1">Bulk Upload</h2>
+          <p className="text-xs text-gray-500">
+            Upload your bank statement CSV to import multiple expenses at once.
+          </p>
+        </div>
+      </div>
 
       {/* Upload Dropzone Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-aa-gray-border p-6 mb-8 text-center">
-        <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 bg-gray-50 mb-4 transition-colors hover:border-aa-blue hover:bg-blue-50">
-          <span className="text-4xl mb-3 block">📄</span>
-          <p className="text-gray-600 text-sm font-medium mb-1">
-            {file ? file.name : "Tap to select CSV file"}
-          </p>
-          <input 
-            type="file" 
-            accept=".csv"
-            className="hidden" 
-            id="csv-upload"
-            onChange={(e) => setFile(e.target.files[0])} 
-          />
-          <label htmlFor="csv-upload" className="text-aa-blue text-sm cursor-pointer font-semibold">
-            Browse files
-          </label>
+      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5 mb-8 flex flex-col items-center">
+        <div className="w-full border-2 border-dashed border-gray-200 rounded-2xl p-6 bg-gray-50 mb-5 transition-colors relative flex flex-col items-center justify-center min-h-[160px]">
+          {file ? (
+            <div className="flex flex-col items-center justify-center animate-fade-in">
+              <span className="text-4xl mb-3 block">📄</span>
+              <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-gray-200 shadow-sm">
+                <span className="text-sm font-bold text-[#002147] truncate max-w-[180px]">
+                  {file.name}
+                </span>
+                {/* The 'X' Button to remove selected file */}
+                <button 
+                  onClick={() => setFile(null)}
+                  className="text-gray-400 hover:text-aa-red transition-colors ml-1 p-1 rounded-full hover:bg-red-50 flex items-center justify-center"
+                  title="Remove file"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center animate-fade-in">
+              <span className="text-4xl mb-3 block opacity-50">📂</span>
+              <p className="text-gray-500 text-xs font-semibold mb-3">
+                Tap to select a CSV file
+              </p>
+              <input 
+                type="file" 
+                accept=".csv"
+                className="hidden" 
+                id="csv-upload"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    setFile(e.target.files[0]);
+                  }
+                  // Reset input value so the same file can be selected again if removed
+                  e.target.value = null; 
+                }} 
+              />
+              <label htmlFor="csv-upload" className="inline-block bg-white text-aa-blue border border-gray-200 text-xs font-bold px-5 py-2.5 rounded-xl cursor-pointer hover:bg-blue-50 transition-colors shadow-sm">
+                Browse Files
+              </label>
+            </div>
+          )}
         </div>
 
         <button 
           onClick={handleUpload}
           disabled={!file || isUploading}
-          className={`w-full py-4 rounded-xl font-semibold text-lg transition-all ${
+          className={`w-full py-4 rounded-xl font-bold transition-all active:scale-[0.98] ${
             file && !isUploading
-              ? "bg-aa-blue text-white shadow-lg shadow-aa-blue/30 active:scale-95 hover:bg-[#003665]"
-              : "bg-gray-200 text-gray-400 cursor-not-allowed"
+              ? "bg-aa-blue text-white shadow-lg shadow-aa-blue/30"
+              : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
           }`}
         >
           {isUploading ? "Uploading..." : "Upload CSV"}
         </button>
       </div>
 
-      {/* Pending Splits Inbox (PRD Flow B) */}
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-bold text-gray-800">Pending Splits</h3>
-        <span className="bg-aa-red text-white text-xs font-bold px-2 py-1 rounded-full">
-          {pendingSplits.length} Action Req.
-        </span>
+      {/* CSV Upload Status Section */}
+      <div className="mb-4">
+        <h3 className="text-xl font-bold text-[#002147] font-logo">CSV Upload Status</h3>
+        <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mt-1 mb-2">Recent Jobs</p>
       </div>
 
-      <div className="space-y-4">
-        {pendingSplits.map((expense) => (
-          <div key={expense.id} className="bg-white p-4 rounded-2xl shadow-sm border border-l-4 border-l-aa-red border-y-aa-gray-border border-r-aa-gray-border flex flex-col gap-3">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="font-semibold text-gray-800">{expense.description}</p>
-                <p className="text-xs text-gray-500 mt-1">{expense.date} • {expense.category}</p>
-              </div>
-              <p className="text-lg font-bold text-gray-800">${expense.amount.toFixed(2)}</p>
+      <div className="space-y-3">
+        {/* Blank Skeleton Cards (Waiting for job flow integration) */}
+        {placeholderJobs.map((idx) => (
+          <div key={idx} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-3 opacity-50">
+            <div className="flex justify-between items-center">
+              <div className="h-4 bg-gray-200 rounded w-1/3 animate-pulse"></div>
+              <div className="h-5 bg-gray-100 rounded-full w-16 animate-pulse"></div>
             </div>
-            
-            <button className="w-full bg-gray-50 border border-gray-200 text-aa-blue py-2 rounded-lg text-sm font-semibold hover:bg-gray-100 transition-colors">
-              Assign Contributors
-            </button>
+            <div className="h-3 bg-gray-100 rounded w-1/2 animate-pulse"></div>
           </div>
         ))}
-        {pendingSplits.length === 0 && (
-          <p className="text-center text-gray-500 text-sm mt-8">All caught up! No pending splits.</p>
-        )}
+        
+        <div className="text-center text-gray-400 text-xs mt-6 font-medium bg-white p-4 rounded-xl border border-dashed border-gray-200">
+          Upload a file to see job status here.
+        </div>
       </div>
     </div>
   );

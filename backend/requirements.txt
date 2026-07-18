@@ -16,3 +16,4 @@ fastapi-mail==1.6.2
 mangum==0.21.0
 cryptography==46.0.7
 anthropic
+collections
