@@ -114,8 +114,8 @@ export default function GroupDetail({ groupId, setPage, currentUser }) {
             >
               <div className="flex-1 flex flex-col justify-center pr-4">
                 <div className="flex justify-between items-start mb-2">
-                  <span className="text-lg font-bold text-[#002147] leading-tight">{exp.description}</span>
-                  <span className="text-lg font-bold text-[#002147]">£{exp.amount}</span>
+                  <span className="text-sm font-bold text-[#002147] leading-tight">{exp.description}</span>
+                  <span className="text-base font-bold text-[#002147]">£{exp.amount}</span>
                 </div>
                 <div className="flex gap-4 text-xs font-medium text-gray-500 mb-1">
                   <span>{exp.date}</span>

@@ -140,8 +140,8 @@ const fetchExpenses = async (currentOffset = 0, reset = false) => {
               <div key={exp.id} onClick={() => handleRowClick(exp)} className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm flex items-stretch cursor-pointer hover:shadow-md transition-all group">
                 <div className="flex-1 flex flex-col justify-center pr-4">
                   <div className="flex justify-between items-start mb-2">
-                    <span className="text-lg font-bold text-[#002147] leading-tight group-hover:text-aa-blue transition-colors">{exp.description}</span>
-                    <span className="text-lg font-bold text-[#002147]">£{exp.amount}</span>
+                    <span className="text-sm font-bold text-[#002147] leading-tight group-hover:text-aa-blue transition-colors">{exp.description}</span>
+                    <span className="text-base font-bold text-[#002147]">£{exp.amount}</span>
                   </div>
                   <div className="flex gap-4 text-xs font-medium text-gray-500 mb-1">
                     <span>{exp.date}</span>
@@ -183,7 +183,7 @@ const fetchExpenses = async (currentOffset = 0, reset = false) => {
         )}
       </div>
 
-      <div className="absolute bottom-6 left-0 w-full flex justify-center gap-3 px-4 z-40">
+      <div className="absolute -bottom-4 left-0 w-full flex justify-between gap-3 px-4 z-40">
         <button onClick={() => { if(setEditExpenseData) setEditExpenseData(null); setPage('expense'); }} className="flex-1 bg-aa-blue text-white font-semibold py-3.5 rounded-xl shadow-lg">
           Add Expense
         </button>

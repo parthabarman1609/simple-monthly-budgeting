@@ -1,7 +1,7 @@
 import { supabase } from "./supabaseClient";
 
-const BASE_URL = "https://obscure-space-orbit-x5jg5w6g9gvp3p4rw-8002.app.github.dev/api/v1";
-// const BASE_URL = "https://ghgg3zhkeglgn3yt5dskelaw4y0jwwib.lambda-url.eu-north-1.on.aws/api/v1";
+// const BASE_URL = "https://obscure-space-orbit-x5jg5w6g9gvp3p4rw-8002.app.github.dev/api/v1";
+const BASE_URL = "https://ghgg3zhkeglgn3yt5dskelaw4y0jwwib.lambda-url.eu-north-1.on.aws/api/v1";
 
 export async function apiPost(path, body, isMultipart = false) {
   const headers = {};
