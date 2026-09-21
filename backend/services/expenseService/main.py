@@ -13,6 +13,7 @@ import re
 import io
 import logging
 import uuid
+from datetime import date
 
 # Use APIRouter instead of FastAPI
 router = APIRouter()
@@ -445,27 +446,40 @@ def share_expense(expense_id: str, payload: ShareRequest, user: dict = Depends(g
 @router.get("/api/v1/expenses")
 def get_expenses(
     limit: int = Query(..., ge=1, description="Page size requested by frontend"), 
-    offset: int = Query(..., ge=0, description="Items to skip"), 
+    offset: int = Query(..., ge=0, description="Items to skip"),
+    month: str | None = Query(default=None, description="Filter by month in YYYY-MM format"),
     user: dict = Depends(get_current_user)
     ):
     user_id = user["sub"]
-    
-    # Notice count="exact" - this asks Supabase for the total matching rows safely
-    res = supabase.table("expenses") \
+
+    query = supabase.table("expenses") \
         .select("*, expense_splits(*)", count="exact") \
-        .eq("payer_id", user_id) \
-        .order("date", desc=True) \
+        .eq("payer_id", user_id)
+
+    if month:
+        try:
+            year, month_num = map(int, month.split("-"))
+            if month_num < 1 or month_num > 12:
+                raise ValueError
+            start_of_month = date(year, month_num, 1).isoformat()
+            if month_num == 12:
+                next_month = date(year + 1, 1, 1).isoformat()
+            else:
+                next_month = date(year, month_num + 1, 1).isoformat()
+            query = query.gte("date", start_of_month).lt("date", next_month)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid month format. Use YYYY-MM.")
+
+    res = query.order("date", desc=True) \
         .order("id", desc=True) \
         .range(offset, offset + limit - 1) \
         .execute()
-        
+
     total_count = res.count if res.count is not None else 0
     data = res.data
-    
-    # Explicitly calculate if there is more data
+
     has_more = (offset + limit) < total_count
-    
-    # Return a proper paginated envelope
+
     return {
         "data": data,
         "pagination": {
