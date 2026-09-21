@@ -99,4 +99,49 @@ describe("ExpensesHome month filters", () => {
       expect(lastCall?.[0]).toContain("month=");
     });
   });
+
+  it("preselects the only group and equal splits for every member when sharing an expense", async () => {
+    apiClient.apiGet.mockImplementation((path) => {
+      if (path === "/groups") {
+        return Promise.resolve([{ id: "group-1", name: "Household" }]);
+      }
+      if (path === "/groups/group-1/members") {
+        return Promise.resolve([
+          { user_id: "user-1", name: "Alex" },
+          { user_id: "user-2", name: "Sam" },
+        ]);
+      }
+      if (path.startsWith("/expenses")) {
+        return Promise.resolve({
+          data: [{ id: "exp-1", description: "Groceries", amount: 30.5, date: "2026-09-04", group_id: null, status: "pending" }],
+          pagination: { has_more: false },
+        });
+      }
+      return Promise.resolve([]);
+    });
+
+    render(
+      <ExpensesHome
+        setPage={jest.fn()}
+        currentUser={{ id: "user-1" }}
+        setEditExpenseData={jest.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Groceries")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("combobox")[0]).toHaveValue("group-1");
+      expect(screen.getByRole("checkbox", { name: "Alex (Me)" })).toBeChecked();
+      expect(screen.getByRole("checkbox", { name: "Sam" })).toBeChecked();
+    });
+
+    const splitModeSelectors = screen.getAllByRole("combobox").slice(1);
+    expect(splitModeSelectors).toHaveLength(2);
+    splitModeSelectors.forEach(selector => expect(selector).toHaveValue("equal"));
+  });
 });

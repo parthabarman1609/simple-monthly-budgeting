@@ -1,5 +1,22 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { apiGet, apiPatch } from "../api/client"; 
+
+const EXPENSE_LIMIT = 15;
+
+const getLastSixMonths = () => {
+  const months = [];
+  const today = new Date();
+
+  for (let i = 0; i < 6; i += 1) {
+    const monthDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
+    months.push({
+      value: `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`,
+      label: monthDate.toLocaleString("en-US", { month: "short", year: "numeric" }),
+    });
+  }
+
+  return months;
+};
 
 export default function ExpensesHome({ setPage, currentUser, setEditExpenseData }) {
   const [expenses, setExpenses] = useState([]); 
@@ -9,7 +26,6 @@ export default function ExpensesHome({ setPage, currentUser, setEditExpenseData 
   // Lazy Loading State
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
-  const LIMIT = 15; /* Number of items to fetch per request */
 
   // Share Modal State
   const [isShareModalOpen, setShareModalOpen] = useState(false);
@@ -23,53 +39,21 @@ export default function ExpensesHome({ setPage, currentUser, setEditExpenseData 
   const [monthFilters, setMonthFilters] = useState([]);
   const [bulkSplitActive, setBulkSplitActive] = useState(false);
   const [selectedExpenseIds, setSelectedExpenseIds] = useState([]);
+  const [groupsLoaded, setGroupsLoaded] = useState(false);
+  const [shouldAutoSelectSingleGroup, setShouldAutoSelectSingleGroup] = useState(false);
   const longPressTimerRef = useRef(null);
+  const shouldApplySingleGroupDefaultsRef = useRef(false);
 
-  const getLastSixMonths = () => {
-    const months = [];
-    const today = new Date();
-
-    for (let i = 0; i < 6; i += 1) {
-      const monthDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
-      months.push({
-        value: `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`,
-        label: monthDate.toLocaleString("en-US", { month: "short", year: "numeric" }),
-      });
-    }
-
-    return months;
-  };
-
-  useEffect(() => {
-    const filters = getLastSixMonths();
-    const defaultMonth = filters[0]?.value || "";
-
-    setMonthFilters(filters);
-    setSelectedMonth(defaultMonth);
-    fetchExpenses(0, true, defaultMonth);
-    fetchGroups();
-  }, []);
-
-  useEffect(() => {
-    if (selectedGroup) {
-      apiGet(`/groups/${selectedGroup}/members`)
-        .then(data => setGroupMembers(data || []))
-        .catch(() => setGroupMembers([]));
-    } else {
-      setGroupMembers([]);
-    }
-  }, [selectedGroup]);
-
-const fetchExpenses = async (currentOffset = 0, reset = false, monthFilter = selectedMonth) => {
+  const fetchExpenses = useCallback(async (currentOffset = 0, reset = false, monthFilter = "") => {
     if (reset) {
       setIsLoading(true);
-      setHasMore(true); 
+      setHasMore(true);
     }
 
     try {
       const monthParam = monthFilter ? `&month=${encodeURIComponent(monthFilter)}` : "";
-      const response = await apiGet(`/expenses?limit=${LIMIT}&offset=${currentOffset}${monthParam}`);
-      
+      const response = await apiGet(`/expenses?limit=${EXPENSE_LIMIT}&offset=${currentOffset}${monthParam}`);
+
       if (response && response.data) {
         const { data, pagination } = response;
         setHasMore(Boolean(pagination?.has_more));
@@ -80,19 +64,71 @@ const fetchExpenses = async (currentOffset = 0, reset = false, monthFilter = sel
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  const loadMore = () => {
-    const newOffset = offset + LIMIT;
-    setOffset(newOffset);
-    fetchExpenses(newOffset, false, selectedMonth);
-  };
-
-  const fetchGroups = async () => {
+  const fetchGroups = useCallback(async () => {
     try {
       const data = await apiGet("/groups");
       if (Array.isArray(data)) setGroups(data);
-    } catch (err) {}
+    } catch (err) {
+      setGroups([]);
+    } finally {
+      setGroupsLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    const filters = getLastSixMonths();
+    const defaultMonth = filters[0]?.value || "";
+
+    setMonthFilters(filters);
+    setSelectedMonth(defaultMonth);
+    fetchExpenses(0, true, defaultMonth);
+    fetchGroups();
+  }, [fetchExpenses, fetchGroups]);
+
+  useEffect(() => {
+    if (!isShareModalOpen || !shouldAutoSelectSingleGroup || !groupsLoaded) return;
+
+    const singleGroup = groups.length === 1 ? groups[0] : null;
+    shouldApplySingleGroupDefaultsRef.current = Boolean(singleGroup);
+    setSelectedGroup(singleGroup?.id || "");
+    setShouldAutoSelectSingleGroup(false);
+  }, [groups, groupsLoaded, isShareModalOpen, shouldAutoSelectSingleGroup]);
+
+  useEffect(() => {
+    let ignoreResponse = false;
+
+    if (selectedGroup) {
+      apiGet(`/groups/${selectedGroup}/members`)
+        .then(data => {
+          if (ignoreResponse) return;
+
+          const members = Array.isArray(data) ? data : [];
+          setGroupMembers(members);
+
+          if (shouldApplySingleGroupDefaultsRef.current) {
+            setIncludedMembers(Object.fromEntries(members.map(member => [member.user_id, true])));
+            setMemberModes(Object.fromEntries(members.map(member => [member.user_id, "equal"])));
+            shouldApplySingleGroupDefaultsRef.current = false;
+          }
+        })
+        .catch(() => {
+          if (!ignoreResponse) setGroupMembers([]);
+        });
+    } else {
+      setGroupMembers([]);
+    }
+
+    return () => {
+      ignoreResponse = true;
+    };
+  }, [selectedGroup]);
+
+  const loadMore = () => {
+    const newOffset = offset + EXPENSE_LIMIT;
+    setOffset(newOffset);
+    fetchExpenses(newOffset, false, selectedMonth);
   };
 
   const clearBulkSelection = () => {
@@ -135,16 +171,27 @@ const fetchExpenses = async (currentOffset = 0, reset = false, monthFilter = sel
     setIncludedMembers({});
     setMemberModes({});
     setMemberValues({});
+    setShouldAutoSelectSingleGroup(true);
   };
 
   const handleOpenBulkShare = () => {
     if (selectedExpenseIds.length === 0) return;
+    shouldApplySingleGroupDefaultsRef.current = false;
     setActiveExpense(null);
     setSelectedGroup("");
     setShareModalOpen(true);
     setIncludedMembers({});
     setMemberModes({});
     setMemberValues({});
+    setShouldAutoSelectSingleGroup(false);
+  };
+
+  const closeShareModal = () => {
+    shouldApplySingleGroupDefaultsRef.current = false;
+    setShareModalOpen(false);
+    setSelectedGroup("");
+    setGroupMembers([]);
+    setShouldAutoSelectSingleGroup(false);
   };
 
   const handleToggleMember = (userId) => {
@@ -178,7 +225,7 @@ const fetchExpenses = async (currentOffset = 0, reset = false, monthFilter = sel
       );
 
       alert(bulkSplitActive ? `${expenseIdsToShare.length} expenses shared successfully!` : "Expense shared successfully!");
-      setShareModalOpen(false);
+      closeShareModal();
       clearBulkSelection();
       fetchExpenses(0, true, selectedMonth); 
       setOffset(0);
@@ -364,7 +411,10 @@ const fetchExpenses = async (currentOffset = 0, reset = false, monthFilter = sel
                 1. Select Group
               </label>
               <select 
-                value={selectedGroup} onChange={e => setSelectedGroup(e.target.value)} 
+                value={selectedGroup} onChange={e => {
+                  shouldApplySingleGroupDefaultsRef.current = false;
+                  setSelectedGroup(e.target.value);
+                }}
                 className="w-full bg-white border border-gray-200 rounded-xl p-3 mb-5 outline-none text-sm text-gray-700"
               >
                 <option value="">Choose a group...</option>
@@ -432,7 +482,7 @@ const fetchExpenses = async (currentOffset = 0, reset = false, monthFilter = sel
             </div>
 
             <div className="flex gap-3 pt-3 border-t border-gray-100 shrink-0">
-              <button onClick={() => setShareModalOpen(false)} className="flex-1 py-3 bg-gray-50 border border-gray-200 font-semibold rounded-xl text-gray-600 text-sm">
+              <button onClick={closeShareModal} className="flex-1 py-3 bg-gray-50 border border-gray-200 font-semibold rounded-xl text-gray-600 text-sm">
                 Cancel
               </button>
               <button onClick={handleShareSubmit} className="flex-1 py-3 bg-aa-blue font-semibold rounded-xl text-white text-sm">
