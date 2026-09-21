@@ -25,7 +25,7 @@ handler = Mangum(app)
 origins = [
     "http://localhost:3000",
     "https://obscure-space-orbit-x5jg5w6g9gvp3p4rw-3000.app.github.dev",
-    "https://spliteasy-web-psi.vercel.app/",
+    "https://spliteasy-web-psi.vercel.app",
     "https://main.d3o1gcik5ofq2v.amplifyapp.com"
 ]
 

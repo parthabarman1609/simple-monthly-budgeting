@@ -1,6 +1,10 @@
 import { supabase } from "./supabaseClient";
 
-const BASE_URL = process.env.REACT_APP_API_BASE_URL || "https://obscure-space-orbit-x5jg5w6g9gvp3p4rw-8002.app.github.dev/api/v1";
+const API_VERSION_PATH = "/api/v1";
+const configuredBaseUrl = (process.env.REACT_APP_API_BASE_URL || "https://obscure-space-orbit-x5jg5w6g9gvp3p4rw-8002.app.github.dev/api/v1").replace(/\/+$/, "");
+const BASE_URL = configuredBaseUrl.endsWith(API_VERSION_PATH)
+  ? configuredBaseUrl
+  : `${configuredBaseUrl}${API_VERSION_PATH}`;
 
 export async function apiPost(path, body, isMultipart = false) {
   const headers = {};
