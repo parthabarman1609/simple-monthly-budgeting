@@ -1,9 +1,11 @@
 ## starting backend API server
-uvicorn services.expenseService.main:app --reload --host 0.0.0.0 --port 8002
+cd backend
+uvicorn main:app --reload --host 0.0.0.0 --port 8002
 lsof -i :8002
 kill -9 [PID]
 
 ## starting frontend UI server
+cd frontend
 npm start
 
 ## deploy backend
